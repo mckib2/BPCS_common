@@ -40,7 +40,7 @@ classdef noise_and_error
         
         % convergence
         function obj = compute_convergence(obj,X_old,X)
-            obj.convergence = sum(vabs(X_old - X) ) ./ max(size(X) );
+            obj.convergence = sum(abs(X_old - X) ) ./ max(size(X) );
         end
         
     end
