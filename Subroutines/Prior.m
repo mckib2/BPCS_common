@@ -296,7 +296,7 @@ classdef Prior
             prior.av_mess_old = prior.av_mess; min_ = prior.param_1; max_ = prior.param_2;
             R_ = prior.R; S2_ = prior.S2;
             prior.av_mess = min(max_, (R_ - S2_) .* (R_ > S2_) ) + max(min_, (R_ + S2_) .* (R_ < -S2_) );
-            prior.var_mess = S2_ .* (((min_ < R_ + S2_) && (R_ < -S2_) ) || ((R_ > S2_) && (R_ - S2_ < max_) ) );
+            prior.var_mess = S2_ .* (((min_ < R_ + S2_) & (R_ < -S2_) ) | ((R_ > S2_) & (R_ - S2_ < max_) ) );
             % nothing to learn
         end
         
