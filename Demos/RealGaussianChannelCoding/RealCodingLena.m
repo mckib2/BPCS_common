@@ -1,25 +1,45 @@
 %% readme
-% Demo related to the article about robust error-correction by J.Barbier, F.Krzakala, P.Zhang and L.Zdeborova : http://arxiv.org/pdf/1304.6599.pdf
-% It demonstrates how a picture (Lena) can be sent through a noisy channel and
-% decoded by reconstruction of the noise by use of AMP. The noise model is
-% a background noise (that affects all the components) with a big Gaussian that corrupts a fraction rho of the components : p(z) = Gaussian(0, var_small) + rho * Gaussian(0, 1).
-% AMP decoding is compared with what one would obtain without the big
-% gaussian in the noise but only the small background, it's the ideal
-% decoding, the L1 decoding and the naive one, which is
-% directly estimating the signal without taking care of the noise.
+% Demo related to the article about robust error-correction by J.Barbier,
+% F.Krzakala, P.Zhang and L.Zdeborova : http://arxiv.org/pdf/1304.6599.pdf
+% It demonstrates how a picture (Lena) can be sent through a noisy channel
+% and decoded by reconstruction of the noise by use of AMP. The noise model
+% is a background noise (that affects all the components) with a big
+% Gaussian that corrupts a fraction rho of the components : p(z) =
+% Gaussian(0, var_small) + rho * Gaussian(0, 1). AMP decoding is compared
+% with what one would obtain without the big gaussian in the noise but only
+% the small background, it's the ideal decoding, the L1 decoding and the
+% naive one, which is directly estimating the signal without taking care of
+% the noise.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PROBLEM AND PARAMETERS DEFINITION
+%%%%%%%%%%%%%%%%%%%% PROBLEM AND PARAMETERS DEFINITION %%%%%%%%%%%%%%%%%%%%
 
-clear all; close all;
+clear;
+close all;
 
-%% problem parameters
+%% Problem Parameters
 N = 32.^2; % size of the patches in which the image is decomposed (power of 2, N >= 64^2 becomes very demanding in memory)
-hadamard = 1; % do you want to use hadamard matrix (way more fast) or gaussian one?
-seeded = 0; % seeded or homogeneous matrix (if seeded = 0)? for both there are random and hadamard matrices
+hadamard = true; % do you want to use hadamard matrix (way more fast) or gaussian one?
+seeded = false; % seeded or homogeneous matrix (if seeded = false)? for both there are random and hadamard matrices
 rho_corrupt = 0.1; % density of the big noise
 alphaGlobal = 0.3; % measurement rate
 var_small = 1e-6; % variance of the small additive gaussian noise
-if (seeded == 1)
+
+%% Algorithm Properties
+nb_iter = 100; % maximum number of iterations
+print = 10; % printing frequency
+dump_mes = 0.5; % dumping
+save_ = false; % if you want to save the results set save_ = true
+
+%% Use l1magic pack (not included) or the included l1 AMP solver?
+% default is zero (AMP l1 solver), be sure to download l1_magic and put it
+% in the path if you use it: http://users.ece.gatech.edu/~justin/l1magic/
+l1_magic = false;
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%% NO MODIFICATIONS AFTER THIS LINE ARE REQUIRED
+
+l1_AMP = ~l1_magic;
+
+if seeded
     JJ = 0.1.^2; % variance parameter between the blocks
     w = 1; % number of sub-diagonal blocks
     numBlockC = 4; % number of blocks for the columns of the seeding matrix (POWER OF 2)
@@ -27,27 +47,21 @@ if (seeded == 1)
     alphaCs(1) = 3 .* rho_corrupt; % measurement rate seed
     alphaCs(2 : numBlockL) = (numBlockC .* alphaGlobal - alphaCs(1) ) ./ (numBlockL - 1); % measurement rate bulk blocks
 else
-    alphaCs(1) = alphaGlobal; JJ = []; numBlockC = 1; numBlockL = 1; w = 0; % parameters for non-seeded matrix
+    alphaCs(1) = alphaGlobal;
+    JJ = [];
+    numBlockC = 1;
+    numBlockL = 1;
+    w = 0; % parameters for non-seeded matrix
 end
 
-%% algorithm properties
-nb_iter = 100; % maximum number of iterations
-print = 10; % printing frequency
-dump_mes = 0.5; % dumping
-save_ = 0; % if you want to save the results, save_ = 1
+if(numBlockC > 1) && (alphaCs(1) < alphaCs(2) )
+    error('The first block must have a measurement rate bigger or equal to the one of the bulk blocks');
+end
 
-%% do you want to use l1magic pack (that must be added to the path) or the inluded l1 AMP solver?
-% default is zero (AMP l1 solver), be sure to download l1_magic and put it in the path if you use it: http://users.ece.gatech.edu/~justin/l1magic/
-l1_magic = 0; l1_AMP = 1 - l1_magic;
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%% NO MODIFICATIONS AFTER THIS LINE ARE REQUIRED
-
-if(numBlockC > 1); if (alphaCs(1) < alphaCs(2) ); error('The first block must have a measurement rate bigger or equal to the one of the bulk blocks'); end; end
-
-%% Initialisation
+%% Initialization
 M = ceil(N ./ (1 - alphaGlobal) ); % number of sent components through the noisy channel
-if (hadamard == 1)
-    if (seeded == 0)
+if hadamard
+    if ~seeded
         NN = 2^(ceil(log(M) / log(2) ) );  % number of variables extended to the first next power of two
         Nblock = NN; % number of variables per block in the seeded matrix (POWER OF 2)
         Mblock = floor(alphaGlobal * Nblock); % number of measurements
@@ -57,7 +71,7 @@ if (hadamard == 1)
         Mblock = floor(alphaCs * Nblock); % number of lines per block
     end
 else
-    if (seeded == 0)
+    if ~seeded
         NN = M;
         Nblock = NN;
         Mblock = floor(alphaGlobal * Nblock); % number of lines per block
@@ -66,51 +80,75 @@ else
         Nblock = NN; % number of variables per block in the seeded matrix
         Mblock = floor(alphaCs * Nblock); % number of lines per block
     end
-    
 end
+
 J = createSeededJ(numBlockL, numBlockC, JJ, w, M); % block variance matrix
 [randomPermutations, flipedSigns] = createRandomLinesAndSignsPermutationForOperators(numBlockC, numBlockL, J, Mblock, Nblock); % lines and signs randomization of the operators
 Lena = imread('Lena64.png'); % image loading
 I_L1 = zeros(size(Lena) ); I_CS = zeros(size(Lena) ); I_id = zeros(size(Lena) );
-if (hadamard == 0)
+if ~hadamard
     F = createSeededRandomMatrix('real', J, Mblock, Nblock); 
 else
     F = createSeededHadamardMatrix(J, Mblock, Nblock, randomPermutations, flipedSigns);
 end % Generate the measurement matrix that will measure the noise only (= null space of the coding one)
 
-disp('Lena decoding');
-disp('true gamma'); disp(1 / (1 - sum(Mblock) / (Nblock .* numBlockC) ) );
-disp('true alpha'); disp(sum(Mblock) / (Nblock .* numBlockC) );
+fprintf('Lena decoding...\n');
+fprintf('true gamma: %f\n',(1 / (1 - sum(Mblock) / (Nblock .* numBlockC) )));
+fprintf('true alpha: %f\n',(sum(Mblock) / (Nblock .* numBlockC)));
 
-%% loop over the patches of the pictures
+%% Loop over the patches of the pictures
 for ll = 1 : max(size(Lena) ) / sqrt(N)
     for cc = 1 : max(size(Lena) ) / sqrt(N)
         
         %% Generate the signal and the perfect measure
-        S = double(Lena((ll - 1) * sqrt(N) + 1: ll * sqrt(N), (cc - 1) * sqrt(N) + 1 : cc * sqrt(N) ) ) ./ 256; % patch of the original picture
-        rp = randperm(N); S = reshape(S, N, 1); S_mixed = S(rp); % randomization of the signal
-        A = null(F).'; % coding matrix
-        comp = 0; while (min(size(A) ) > max(size(S_mixed) ) ); S_mixed = [S_mixed; randn]; comp = comp + 1; end % add components to the signal to fulfill size constraints
-        Y_perfect = A.' * S_mixed; MM = max(size(Y_perfect) ); % perfect measure for comparison (non-noisy)
+        
+        % patch of the original picture
+        S = double(Lena((ll - 1) * sqrt(N) + 1: ll * sqrt(N), (cc - 1) * sqrt(N) + 1 : cc * sqrt(N) ) ) ./ 256;
+        
+        % randomization of the signal
+        rp = randperm(N); S = reshape(S, N, 1); S_mixed = S(rp);
+        
+        % coding matrix
+        A = null(F).';
+        
+        comp = 0;
+        while (min(size(A) ) > max(size(S_mixed) ) )
+            S_mixed = [S_mixed; randn];
+            comp = comp + 1;
+        end % add components to the signal to fulfill size constraints
+        
+        % perfect measure for comparison (non-noisy)
+        Y_perfect = A.' * S_mixed; MM = max(size(Y_perfect) );
         
         %% Error due to noisy channel transmission
         k = floor(rho_corrupt .* MM);
-        rp2 = randperm(MM); big_error = [[randn(k, 1); zeros(MM - k, 1)] ]; error_ = big_error(rp2); big_error = error_;
+        rp2 = randperm(MM);
+        big_error = [[randn(k, 1); zeros(MM - k, 1)] ];
+        error_ = big_error(rp2);
+        big_error = error_;
         small_error = randn(MM, 1) .* sqrt(var_small);
         Y_err = Y_perfect + small_error + big_error;
         Y_null = F * Y_err; % noisy measure
         
         %% Ideal coding and decoding
         Y_id = Y_perfect + small_error;
-        X_id = A.' \ Y_id; X_id_(rp) = X_id(1 : max(size(X_id) ) - comp, 1); X_id = X_id_.';
+        X_id = A.' \ Y_id;
+        X_id_(rp) = X_id(1 : max(size(X_id) ) - comp, 1);
+        X_id = X_id_.';
         
         %% Naive decoding (with no error correction)
-        X_naive = A.' \ Y_err; X_naive_(rp) = X_naive(1:max(size(X_naive) ) - comp, 1); X_naive = X_naive_.';
+        X_naive = A.' \ Y_err; X_naive_(rp) = X_naive(1:max(size(X_naive) ) - comp, 1);
+        X_naive = X_naive_.';
         
         %% BPCS coding and decoding by reconstruction of the sparse error vector
         % algorithm properties
         My = CSBP_Solver_Opt();
-        if (hadamard == 1); My.method = 'AMPseededHadamard'; else My.method = 'AMP'; end
+        if hadamard
+            My.method = 'AMPseededHadamard';
+        else
+            My.method = 'AMP';
+        end
+        
         MSEbyBlock = 1;
         My.conv = var_small .* 10;
         My.signal_rho = rho_corrupt;
@@ -129,6 +167,7 @@ for ll = 1 : max(size(Lena) ) / sqrt(N)
         My.nb_iter = nb_iter;
         My.print = print;
         My.dump_mes = dump_mes;
+        
         % 2Gauss
         My.m_2_gauss = 0;
         My.var_1_gauss = var_small;
@@ -136,23 +175,38 @@ for ll = 1 : max(size(Lena) ) / sqrt(N)
         
         %% AMP decoding with 2Gauss prior
         My.prior = '2Gauss';
-        if (hadamard == 0); [X1, results2G, n_and_e] = CSBP_Solver(Y_null, F, My); else [X1, results2G, n_and_e] = CSBP_Solver(Y_null, [], My); end;
+        if ~hadamard
+            [X1, results2G, n_and_e] = CSBP_Solver(Y_null, F, My);
+        else
+            [X1, results2G, n_and_e] = CSBP_Solver(Y_null, [], My);
+        end
+        
         Y_CS = Y_err - X1.';
-        X_CS = A.' \ Y_CS; X_CS_(rp) = X_CS(1:max(size(X_CS) ) - comp, 1); X_CS = X_CS_.';
+        X_CS = A.' \ Y_CS; X_CS_(rp) = X_CS(1:max(size(X_CS) ) - comp, 1);
+        X_CS = X_CS_.';
         
         %% L1
-        if (l1_AMP == 1)
+        if l1_AMP
             My.prior = 'L1';
-            if (hadamard == 0); [X2, resultsL1, n_and_e] = CSBP_Solver(Y_null, F, My); else [X2, resultsL1, n_and_e] = CSBP_Solver(Y_null, [], My); end;
+            if (hadamard == 0)
+                [X2, resultsL1, n_and_e] = CSBP_Solver(Y_null, F, My);
+            else
+                [X2, resultsL1, n_and_e] = CSBP_Solver(Y_null, [], My);
+            end
+            
             Y_L1 = Y_err - X2.';
-            X_L1 = A.' \ Y_L1; X_L1_(rp) = X_L1(1 : max(size(X_L1) ) - comp, 1); X_L1 = X_L1_.';
+            X_L1 = A.' \ Y_L1; X_L1_(rp) = X_L1(1 : max(size(X_L1) ) - comp, 1);
+            X_L1 = X_L1_.';
         else
             err_L1 = l1dantzig_pd(F * Y_null, F', [], Y_null, 3e-3, 1e-2, 1000); % Dantzig selector
-            err_index = abs(err_L1) > sqrt(var_small .* M); F_t = F'; % regression step
+            err_index = abs(err_L1) > sqrt(var_small .* M);
+            F_t = F'; % regression step
             F_index_t = F_t(:,err_index);
-            err_L1 = zeros(size(Y_err) ); err_L1(err_index) = F_index_t \ Y_null;
+            err_L1 = zeros(size(Y_err) );
+            err_L1(err_index) = F_index_t \ Y_null;
             Y_L1 = Y_err - err_L1;
-            X_L1 = A \ Y_L1; X_L1_(rp) = X_L1(1 : max(size(X_L1) ) - comp, 1); X_L1 = X_L1_.';
+            X_L1 = A \ Y_L1; X_L1_(rp) = X_L1(1 : max(size(X_L1) ) - comp, 1);
+            X_L1 = X_L1_.';
         end
         
         %% Results
@@ -177,12 +231,28 @@ for ll = 1 : max(size(Lena) ) / sqrt(N)
 end
 
 %% Plots
-clf
-subplot(3, 2, 1); imshow(Lena); xlabel('Original Image');
-subplot(3, 2, 2); imshow(I_id); xlabel('Ideal');
-subplot(3, 2, 3); imshow(I_CS); xlabel('AMP 2Gauss');
-subplot(3, 2, 4); imshow(I_L1); xlabel('L1');
-subplot(3, 2, 5); imshow(I_naive); xlabel('No error correction');
+figure(1);
+subplot(3, 2, 1);
+imshow(Lena);
+title('Original Image');
+
+subplot(3, 2, 2);
+imshow(I_id);
+title('Ideal');
+
+subplot(3, 2, 3);
+imshow(I_CS);
+title('AMP 2Gauss');
+
+subplot(3, 2, 4);
+imshow(I_L1);
+title('L1');
+
+subplot(3, 2, 5);
+imshow(I_naive);
+title('No error correction');
 
 %% Save
-if (save_ == 1); save('Lena_decoding','I_id','I_CS','I_L1','I_naive','results_'); end
+if save_
+    save('Lena_decoding','I_id','I_CS','I_L1','I_naive','results_');
+end

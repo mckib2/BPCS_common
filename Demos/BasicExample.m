@@ -1,3 +1,6 @@
+close all;
+clear;
+
 % option field
 My = CSBP_Solver_Opt();
 
