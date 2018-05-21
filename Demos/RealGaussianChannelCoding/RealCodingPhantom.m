@@ -72,7 +72,11 @@ J = createSeededJ(numBlockL, numBlockC, JJ, w, M); % block variance matrix
 [randomPermutations, flipedSigns] = createRandomLinesAndSignsPermutationForOperators(numBlockC, numBlockL, J, Mblock, Nblock); % lines and signs randomization of the operators
 Phantom = phantom(sqrt(N) ); % image loading
 I_L1 = zeros(size(Phantom) ); I_CS = zeros(size(Phantom) ); I_id = zeros(size(Phantom) );
-if (hadamard == 0); F = createSeededRandomMatrix('real', J, Mblock, Nblock); else F = createSeededHadamardMat(Mblock, Nblock, numBlockL, numBlockC, J, randomPermutations, flipedSigns); end % Generate the measurement matrix that will measure the noise only (= null space of the coding one)
+if (hadamard == 0)
+    F = createSeededRandomMatrix('real', J, Mblock, Nblock);
+else
+    F = createSeededHadamardMatrix(J, Mblock, Nblock, randomPermutations, flipedSigns);
+end % Generate the measurement matrix that will measure the noise only (= null space of the coding one)
 % if (max(size(F) ) - min(size(F) ) < max(size(Phantom) ) );
 
 disp('Lena decoding');
